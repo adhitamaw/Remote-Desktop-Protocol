@@ -25,13 +25,36 @@ jobs:
         Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "UserAuthentication" -Value 1
         Set-LocalUser -Name "runneradmin" -Password (ConvertTo-SecureString -AsPlainText "P@ssw0rd!" -Force)
     
-    - name: Create Tunnel
-      run: .\ngrok.exe tcp 3389 --log=ngrok.log &
-      
-    - name: Get Public IP
+    - name: Create Tunnel & Get Public IP
       run: |
-        Start-Sleep -Seconds 5
-        Invoke-RestMethod -Uri http://localhost:4040/api/tunnels | Select-Object -Expand tunnels | Select-Object -Expand public_url
+        Start-Process -FilePath ".\ngrok.exe" -ArgumentList "tcp 3389 --log=ngrok.log" -PassThru
+        Start-Sleep -Seconds 10
+        
+        # Lebih banyak waktu untuk memastikan Ngrok sudah berjalan
+        $maxRetries = 5
+        $retryCount = 0
+        $success = $false
+        
+        while (-not $success -and $retryCount -lt $maxRetries) {
+          try {
+            $tunnelData = Invoke-RestMethod -Uri http://localhost:4040/api/tunnels -ErrorAction Stop
+            $publicUrl = $tunnelData.tunnels.public_url
+            Write-Host "NGROK Public URL: $publicUrl"
+            $success = $true
+          }
+          catch {
+            $retryCount++
+            Write-Host "Attempt $retryCount failed. Waiting before retry..."
+            Start-Sleep -Seconds 10
+          }
+        }
+        
+        if (-not $success) {
+          # Alternatif jika API Ngrok tidak bisa diakses
+          Write-Host "Tidak dapat mengambil URL dari API Ngrok."
+          Write-Host "Silakan periksa log Ngrok secara manual:"
+          Get-Content -Path ngrok.log -Tail 20
+        }
       
     - name: Keep Alive
       run: |
